@@ -1,0 +1,34 @@
+{
+  "name": "mellies-webapp",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20.19.0" },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "dev:api": "node --env-file=.env server/index.js",
+    "hash-admin": "node scripts/hash-admin.mjs",
+    "build": "vite build",
+    "start": "node server/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "express": "^5.1.0",
+    "express-mysql-session": "^3.0.3",
+    "express-rate-limit": "^8.0.0",
+    "express-session": "^1.18.2",
+    "framer-motion": "^12.23.0",
+    "helmet": "^8.1.0",
+    "lucide-react": "^0.468.0",
+    "luxon": "^3.6.0",
+    "mysql2": "^3.15.0",
+    "nodemailer": "^7.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.9.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
+    "vite": "^6.4.0"
+  }
+}
