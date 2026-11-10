@@ -259,3 +259,7 @@ body .booking-form .btn { justify-self:start; }
  *,*::before,*::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }
  .marquee-track { transform:none; }
 }
+
+/* Keep the hero in one column at tablet and phone widths. */
+@media (max-width:800px) { .hero-grid { grid-template-columns:minmax(0,1fr); } }
+@media (max-width:660px) { .hero--editorial h1 { max-width:10ch; } .hero-media { width:min(100%,540px); margin-inline:auto; } }
