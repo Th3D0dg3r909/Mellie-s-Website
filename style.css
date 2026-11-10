@@ -84,3 +84,19 @@ nav a:hover, nav a[aria-current="page"] { color: var(--copper); }
 }
 
 nav .btn[aria-current="page"] { background: var(--cream); color: var(--deep); }
+.booking-form { display: grid; gap: 15px; max-width: 560px; }
+.booking-form label { display: grid; gap: 5px; color: var(--cream); font-weight: 650; }
+.booking-form input, .booking-form select, .booking-form textarea { width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 0; padding: 9px 12px; background: var(--deep); color: var(--cream); font: inherit; }
+.booking-form textarea { resize: vertical; }
+.booking-form .btn, .reservation .btn { cursor: pointer; font: inherit; font-weight: 800; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-hint { font-size: .85rem; }
+.notice { padding: 16px; margin: 15px 0; border: 1px solid var(--copper); background: var(--panel); }
+.notice.success { border-color: #82bb95; }
+.notice p { margin-bottom: 0; }
+.trap { position: absolute; width: 1px; height: 1px; overflow: hidden; left: -10000px; }
+.admin-login { margin-top: 25px; }
+.reservation-list { display: grid; gap: 16px; }
+.reservation h2 { font-size: clamp(1.7rem, 3vw, 2.5rem); }
+.reservation .actions { margin-top: 15px; }
+@media (max-width: 480px) { .form-row { grid-template-columns: 1fr; } }
