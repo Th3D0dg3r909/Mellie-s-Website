@@ -263,3 +263,5 @@ body .booking-form .btn { justify-self:start; }
 /* Keep the hero in one column at tablet and phone widths. */
 @media (max-width:800px) { .hero-grid { grid-template-columns:minmax(0,1fr); } }
 @media (max-width:660px) { .hero--editorial h1 { max-width:10ch; } .hero-media { width:min(100%,540px); margin-inline:auto; } }
+
+@media (max-width:660px) { .priced-list { grid-template-columns:minmax(0,1fr); min-width:0; } .priced-item { min-width:0; } .priced-item > div { min-width:0; } .priced-item h3,.priced-item p { overflow-wrap:anywhere; } }
