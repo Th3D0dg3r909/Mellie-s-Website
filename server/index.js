@@ -10,6 +10,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bookingDateRange, validateBooking } from './booking.js';
 import { verifyAdminPassword } from './auth.js';
+import { eventToday, validateEvent, validateEventImage } from './events.js';
 import { notifyOwner, sendCustomerMessage } from './mail.js';
 
 const required = ['DB_NAME', 'DB_USER', 'DB_PASSWORD', 'ADMIN_PASSWORD_HASH', 'SESSION_SECRET'];
@@ -48,7 +49,6 @@ app.use(helmet({
     }
   }
 }));
-app.use(express.json({ limit: '12kb' }));
 app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.use(session({
   name: 'mellies.sid',
@@ -63,6 +63,9 @@ app.use(session({
     maxAge: 24 * 60 * 60 * 1000
   }
 }));
+// The signed-in event editor can send one small image. Other API bodies stay small.
+app.use('/api/admin/events', adminOnly, express.json({ limit: '3mb' }));
+app.use(express.json({ limit: '12kb' }));
 
 function csrf(req) {
   if (!req.session.csrf) req.session.csrf = randomBytes(32).toString('hex');
@@ -77,8 +80,28 @@ function validCsrf(req) {
     timingSafeEqual(Buffer.from(supplied), Buffer.from(expected));
 }
 function adminOnly(req, res, next) {
-  if (!req.session.admin) return res.status(401).json({ error: 'Log in om reserveringen te beheren.' });
+  if (!req.session.admin) return res.status(401).json({ error: 'Log in om het beheer te openen.' });
   next();
+}
+
+const eventFields = 'id, title, description, event_date, start_time, end_time, link_url, status, (cover_mime IS NOT NULL) AS has_image, updated_at';
+function eventForClient(row) {
+  return {
+    id: row.id, title: row.title, description: row.description,
+    date: String(row.event_date).slice(0, 10),
+    startTime: row.start_time.slice(0, 5),
+    endTime: row.end_time?.slice(0, 5) || '',
+    linkUrl: row.link_url || '', status: row.status,
+    hasImage: Boolean(row.has_image), updatedAt: row.updated_at
+  };
+}
+function eventId(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Ongeldig eventnummer.' });
+    return null;
+  }
+  return id;
 }
 
 const bookingLimit = rateLimit({
@@ -97,6 +120,33 @@ app.get('/api/health', async (_req, res) => {
   catch { res.status(503).json({ ok: false }); }
 });
 app.get('/api/session', (req, res) => res.json({ csrf: csrf(req), admin: Boolean(req.session.admin), ...bookingDateRange() }));
+
+app.get('/api/events', async (_req, res) => {
+  try {
+    const today = eventToday();
+    const [upcoming] = await db.execute(`SELECT ${eventFields} FROM events WHERE status = 'published' AND event_date >= ? ORDER BY event_date, start_time, id LIMIT 100`, [today]);
+    const [past] = await db.execute(`SELECT ${eventFields} FROM events WHERE status = 'published' AND event_date < ? ORDER BY event_date DESC, start_time DESC, id DESC LIMIT 24`, [today]);
+    res.json({ upcoming: upcoming.map(eventForClient), past: past.map(eventForClient) });
+  } catch (error) {
+    console.error('Public events failed:', error.message);
+    res.status(503).json({ error: 'De agenda is tijdelijk niet beschikbaar.' });
+  }
+});
+app.get('/api/events/:id/image', async (req, res) => {
+  const id = eventId(req, res);
+  if (!id) return;
+  try {
+    const [rows] = await db.execute('SELECT status, cover_mime, cover_data FROM events WHERE id = ?', [id]);
+    const event = rows[0];
+    if (!event || !event.cover_data || (event.status !== 'published' && !req.session.admin)) {
+      return res.status(404).end();
+    }
+    res.type(event.cover_mime).send(event.cover_data);
+  } catch (error) {
+    console.error('Event image failed:', error.message);
+    res.status(503).end();
+  }
+});
 
 app.post('/api/reservations', bookingLimit, async (req, res) => {
   if (!validCsrf(req)) return res.status(403).json({ error: 'De sessie is verlopen. Ververs de pagina.' });
@@ -146,6 +196,77 @@ app.post('/api/admin/logout', adminOnly, (req, res) => {
     res.json({ ok: true });
   });
 });
+app.get('/api/admin/events', adminOnly, async (_req, res) => {
+  try {
+    const [rows] = await db.query(`SELECT ${eventFields} FROM events ORDER BY event_date DESC, start_time DESC, id DESC LIMIT 300`);
+    res.json({ events: rows.map(eventForClient) });
+  } catch (error) {
+    console.error('Admin events failed:', error.message);
+    res.status(503).json({ error: 'Events laden mislukt.' });
+  }
+});
+app.post('/api/admin/events', adminOnly, async (req, res) => {
+  if (!validCsrf(req)) return res.status(403).json({ error: 'De sessie is verlopen. Ververs de pagina.' });
+  const result = validateEvent(req.body);
+  if (!result.ok) return res.status(400).json({ error: result.error });
+  const cover = validateEventImage(req.body.cover);
+  if (!cover.ok) return res.status(400).json({ error: cover.error });
+  const e = result.data;
+  try {
+    const [insert] = await db.execute(
+      'INSERT INTO events (title, description, event_date, start_time, end_time, link_url, status, cover_mime, cover_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [e.title, e.description, e.date, e.startTime, e.endTime, e.linkUrl, e.status, cover.data?.mime || null, cover.data?.bytes || null]
+    );
+    res.status(201).json({ ok: true, id: insert.insertId });
+  } catch (error) {
+    console.error('Event creation failed:', error.message);
+    res.status(503).json({ error: 'Event opslaan mislukt.' });
+  }
+});
+app.put('/api/admin/events/:id', adminOnly, async (req, res) => {
+  if (!validCsrf(req)) return res.status(403).json({ error: 'De sessie is verlopen. Ververs de pagina.' });
+  const id = eventId(req, res);
+  if (!id) return;
+  const result = validateEvent(req.body);
+  if (!result.ok) return res.status(400).json({ error: result.error });
+  if (req.body.removeImage !== undefined && typeof req.body.removeImage !== 'boolean') {
+    return res.status(400).json({ error: 'Ongeldige fotokeuze.' });
+  }
+  if (req.body.removeImage && req.body.cover != null) {
+    return res.status(400).json({ error: 'Kies een nieuwe foto of verwijder de bestaande.' });
+  }
+  const cover = validateEventImage(req.body.cover);
+  if (!cover.ok) return res.status(400).json({ error: cover.error });
+  const e = result.data;
+  const photoUpdate = cover.data ? ', cover_mime = ?, cover_data = ?' : req.body.removeImage ? ', cover_mime = NULL, cover_data = NULL' : '';
+  const values = [e.title, e.description, e.date, e.startTime, e.endTime, e.linkUrl, e.status];
+  if (cover.data) values.push(cover.data.mime, cover.data.bytes);
+  values.push(id);
+  try {
+    const [result] = await db.execute(
+      `UPDATE events SET title = ?, description = ?, event_date = ?, start_time = ?, end_time = ?, link_url = ?, status = ?${photoUpdate}, updated_at = NOW() WHERE id = ?`,
+      values
+    );
+    if (!result.affectedRows) return res.status(404).json({ error: 'Event niet gevonden.' });
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Event update failed:', error.message);
+    res.status(503).json({ error: 'Event bijwerken mislukt.' });
+  }
+});
+app.delete('/api/admin/events/:id', adminOnly, async (req, res) => {
+  if (!validCsrf(req)) return res.status(403).json({ error: 'De sessie is verlopen. Ververs de pagina.' });
+  const id = eventId(req, res);
+  if (!id) return;
+  try {
+    const [result] = await db.execute('DELETE FROM events WHERE id = ?', [id]);
+    if (!result.affectedRows) return res.status(404).json({ error: 'Event niet gevonden.' });
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Event deletion failed:', error.message);
+    res.status(503).json({ error: 'Event verwijderen mislukt.' });
+  }
+});
 app.get('/api/admin/reservations', adminOnly, async (_req, res) => {
   try {
     const [rows] = await db.query("SELECT * FROM reservations WHERE reservation_date >= CURDATE() - INTERVAL 30 DAY ORDER BY FIELD(status, 'pending','approved','declined'), reservation_date, reservation_time LIMIT 300");
@@ -189,6 +310,11 @@ app.post('/api/admin/reservations/:id/decision', adminOnly, async (req, res) => 
   }
   res.json({ ok: true, sent, message: sent ? 'Aanvraag verwerkt; e-mail aangeboden aan de mailserver.' : 'Aanvraag verwerkt, maar e-mail is niet verzonden. Bel of mail de gast zelf.' });
 });
+app.use('/api', (error, _req, res, next) => {
+  if (error.type === 'entity.too.large') return res.status(413).json({ error: 'De foto of aanvraag is te groot.' });
+  if (error.type === 'entity.parse.failed') return res.status(400).json({ error: 'Ongeldige aanvraag.' });
+  next(error);
+});
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Niet gevonden.' }));
 
 for (const [oldPath, newPath] of Object.entries({
@@ -209,8 +335,11 @@ app.get('/{*path}', (req, res) => {
 
 const port = Number(process.env.PORT || 3000);
 async function start() {
-  // An empty database is enough: create the reservation table on first start.
-  await db.query(await readFile(new URL('../schema.sql', import.meta.url), 'utf8'));
+  // Add new tables on deploy; existing reservations and events stay intact.
+  const schema = await readFile(new URL('../schema.sql', import.meta.url), 'utf8');
+  for (const statement of schema.split(';').map((part) => part.trim()).filter(Boolean)) {
+    await db.query(statement);
+  }
   app.listen(port, '0.0.0.0', () => console.log(`Mellie's webapp listening on ${port}`));
 }
 start().catch((error) => {

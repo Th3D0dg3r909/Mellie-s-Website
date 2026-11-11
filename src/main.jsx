@@ -13,9 +13,14 @@ import {
   ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
+  CalendarDays,
+  Clock3,
+  ImagePlus,
   MapPin,
   Menu,
   Phone,
+  Pencil,
+  Trash2,
   X,
 } from "lucide-react";
 import { menu } from "./menu.js";
@@ -455,7 +460,60 @@ function CardMenu() {
   );
 }
 
+function eventDate(date, options) {
+  return new Intl.DateTimeFormat("nl-NL", { timeZone: "Europe/Amsterdam", ...options })
+    .format(new Date(`${date}T12:00:00Z`));
+}
+
+function EventCard({ event, past = false }) {
+  const image = event.hasImage && `/api/events/${event.id}/image?v=${encodeURIComponent(event.updatedAt)}`;
+  return (
+    <article className={`event-card ${past ? "event-card--past" : ""}`} id={`event-${event.id}`}>
+      <div className="event-card__date" aria-label={eventDate(event.date, { dateStyle: "full" })}>
+        <strong>{eventDate(event.date, { day: "2-digit" })}</strong>
+        <span>{eventDate(event.date, { month: "short" })}</span>
+        <small>{eventDate(event.date, { year: "numeric" })}</small>
+      </div>
+      <div className="event-card__content">
+        <p className="eyebrow">Drinks & Bites by Mellie’s</p>
+        <h3>{event.title}</h3>
+        <p className="event-card__when">
+          <CalendarDays size={18} aria-hidden="true" /> {eventDate(event.date, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+          <span aria-hidden="true">·</span>
+          <Clock3 size={18} aria-hidden="true" /> {event.startTime}{event.endTime ? ` – ${event.endTime}` : ""} uur
+        </p>
+        <p className="event-card__description">{event.description}</p>
+        {!past && (event.linkUrl ? (
+          <a className="text-link" href={event.linkUrl} target="_blank" rel="noopener noreferrer">
+            Meer info / aanmelden <ArrowUpRight size={18} aria-hidden="true" />
+          </a>
+        ) : (
+          <Link className="text-link" to="/reserveer">
+            Vraag een tafel aan <ArrowUpRight size={18} aria-hidden="true" />
+          </Link>
+        ))}
+      </div>
+      <div className={`event-card__visual ${image ? "" : "event-card__visual--graphic"}`}>
+        {image ? <img src={image} alt={`Poster of foto bij ${event.title}`} loading="lazy" /> : (
+          <span aria-hidden="true">GOOD<br />TIMES<span>✳</span></span>
+        )}
+      </div>
+    </article>
+  );
+}
+
 function Events() {
+  const [agenda, setAgenda] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    api("/api/events").then(setAgenda).catch((e) => setError(e.message));
+  }, []);
+  const months = [];
+  for (const event of agenda?.upcoming || []) {
+    const key = event.date.slice(0, 7);
+    if (months.at(-1)?.key !== key) months.push({ key, events: [] });
+    months.at(-1).events.push(event);
+  }
   return (
     <>
       <PageHero
@@ -464,34 +522,49 @@ function Events() {
         accent="nog jong."
         image="mellies-events.jpg"
       >
-        Van een gezellige borrelavond tot iets te vieren: houd deze pagina in de
-        gaten voor nieuwe aankondigingen.
+        Een goede avond krijgt een datum. Ontdek wat er binnenkort bij Melanie
+        aan de bar gebeurt.
       </PageHero>
-      <section className="shell editorial-block">
-        <div>
-          <p className="eyebrow">Drinks & Bites by Mellie’s</p>
-          <h2>
-            Maak er <em>iets moois van.</em>
-          </h2>
-          <p>
-            De nieuwe agenda krijgt hier een plek. Er staan op dit moment nog
-            geen data aangekondigd. Wil je intussen iets organiseren of weten
-            wat er gepland staat? Neem contact op met Melanie.
-          </p>
-          <div className="actions">
-            <a className="button" href={phone}>
-              Bel ons <Phone size={17} aria-hidden="true" />
-            </a>
-            <a className="button button--line" href={whatsapp}>
-              WhatsApp <ArrowUpRight size={17} aria-hidden="true" />
-            </a>
+      <section className="shell event-agenda">
+        <div className="event-agenda__intro">
+          <div>
+            <p className="eyebrow">De agenda</p>
+            <h2>Dit wil je <em>niet missen.</em></h2>
           </div>
+          <p>Van een spontane borrel tot een avond die je alvast vrijhoudt. Hier staan de events in volgorde van datum.</p>
         </div>
-        <img
-          src={A + "mellies-events.jpg"}
-          loading="lazy"
-          alt="Drinks & Bites by Mellie’s"
-        />
+        {!agenda && !error && <p role="status">Agenda laden…</p>}
+        {error && <p className="feedback" role="alert">{error} Bel ons gerust voor de actuele agenda.</p>}
+        {months.map(({ key, events }) => (
+          <div className="event-month" key={key}>
+            <div className="event-month__heading"><span>{eventDate(events[0].date, { month: "long", year: "numeric" })}</span><span>{String(events.length).padStart(2, "0")} {events.length === 1 ? "event" : "events"}</span></div>
+            <div className="event-timeline">{events.map((event) => <EventCard event={event} key={event.id} />)}</div>
+          </div>
+        ))}
+        {agenda && !agenda.upcoming.length && (
+          <div className="event-empty">
+            <span aria-hidden="true">✳</span>
+            <div>
+              <p className="eyebrow">Binnenkort meer</p>
+              <h3>De volgende ronde komt eraan.</h3>
+              <p>Er is nog geen nieuwe datum aangekondigd. Kom gezellig langs of vraag Melanie wat er op de planning staat.</p>
+              <a className="text-link" href={whatsapp} target="_blank" rel="noopener noreferrer">Vraag het via WhatsApp <ArrowUpRight size={18} aria-hidden="true" /></a>
+            </div>
+          </div>
+        )}
+        {agenda?.past.length > 0 && (
+          <div className="event-past">
+            <p className="eyebrow">Eerder bij Mellie’s</p>
+            <h2>Wat hebben we <em>gevierd?</em></h2>
+            <div className="event-timeline">{agenda.past.map((event) => <EventCard event={event} past key={event.id} />)}</div>
+          </div>
+        )}
+      </section>
+      <section className="event-contact">
+        <div className="shell event-contact__inner">
+          <div><p className="eyebrow">Jouw avond bij ons?</p><h2>Maak er <em>iets moois van.</em></h2></div>
+          <div><p>Zelf iets te vieren of benieuwd naar de volgende editie? Laat van je horen.</p><div className="actions"><a className="button button--dark" href={phone}>Bel ons <Phone size={17} aria-hidden="true" /></a><a className="text-link" href={whatsapp} target="_blank" rel="noopener noreferrer">WhatsApp <ArrowUpRight size={17} aria-hidden="true" /></a></div></div>
+        </div>
       </section>
     </>
   );
@@ -831,9 +904,90 @@ function Booking() {
   );
 }
 
+function readCover(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve({ mime: file.type, data: String(reader.result).split(",")[1] });
+    reader.onerror = () => reject(new Error("De foto kon niet worden gelezen."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function EventEditor({ event, onSave, onCancel }) {
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState("");
+  const [removeImage, setRemoveImage] = useState(false);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    if (!file) { setPreview(""); return; }
+    const url = URL.createObjectURL(file);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+  async function submit(action) {
+    action.preventDefault();
+    setError("");
+    const form = action.currentTarget;
+    const data = Object.fromEntries(new FormData(form));
+    delete data.cover;
+    if (file && (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 2 * 1024 * 1024)) {
+      setError("Gebruik een JPG-, PNG- of WebP-foto van maximaal 2 MB.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave({ ...data, cover: file ? await readCover(file) : null, removeImage }, event?.id);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+  const currentImage = event?.hasImage && !removeImage && !file && `/api/events/${event.id}/image?v=${encodeURIComponent(event.updatedAt)}`;
+  return (
+    <section className="event-editor" aria-label={event ? "Event bewerken" : "Nieuw event"}>
+      <div className="event-editor__heading">
+        <div><p className="eyebrow">Agenda beheren</p><h2>{event ? "Event bewerken" : "Nieuw event"}</h2></div>
+        <button type="button" className="text-link" onClick={onCancel}>Sluiten <X size={17} aria-hidden="true" /></button>
+      </div>
+      {error && <p className="feedback" role="alert">{error}</p>}
+      <form className="booking-form event-editor__form" onSubmit={submit}>
+        <label>Titel <input name="title" defaultValue={event?.title || ""} maxLength="140" placeholder="Bijvoorbeeld: Cocktail Night" required /></label>
+        <div className="form-cols">
+          <label>Datum <input name="date" type="date" defaultValue={event?.date || ""} required /></label>
+          <label>Starttijd <input name="startTime" type="time" defaultValue={event?.startTime || ""} required /></label>
+        </div>
+        <div className="form-cols">
+          <label>Eindtijd (optioneel) <input name="endTime" type="time" defaultValue={event?.endTime || ""} /></label>
+          <label>Zichtbaarheid
+            <select name="status" defaultValue={event?.status || "draft"}>
+              <option value="draft">Concept · alleen in beheer</option>
+              <option value="published">Gepubliceerd · op de website</option>
+            </select>
+          </label>
+        </div>
+        <label>Omschrijving <textarea name="description" defaultValue={event?.description || ""} rows="6" maxLength="3000" placeholder="Vertel wat er te doen is en voor wie de avond is." required /></label>
+        <label>Link voor meer info of aanmelden (optioneel) <input name="linkUrl" type="url" defaultValue={event?.linkUrl || ""} maxLength="1000" placeholder="https://..." /></label>
+        <p className="form-hint">Zonder aanmeldlink verwijst de eventpagina naar het reserveringsformulier.</p>
+        <label>Poster of foto (optioneel) <input name="cover" type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => { setFile(e.target.files?.[0] || null); setRemoveImage(false); }} /></label>
+        <p className="form-hint">JPG, PNG of WebP, maximaal 2 MB. Een staande poster komt mooi uit in de agenda.</p>
+        {(preview || currentImage) && <div className="event-editor__preview"><img src={preview || currentImage} alt="Voorvertoning van de eventfoto" /><span><ImagePlus size={17} aria-hidden="true" /> {preview ? "Nieuwe foto geselecteerd" : "Huidige foto"}</span></div>}
+        {event?.hasImage && !file && (
+          <label className="event-editor__checkbox"><input type="checkbox" checked={removeImage} onChange={(e) => setRemoveImage(e.target.checked)} /> Bestaande foto verwijderen</label>
+        )}
+        <div className="actions"><button className="button" type="submit" disabled={saving}>{saving ? "Opslaan…" : event ? "Wijzigingen opslaan" : "Event opslaan"} <ArrowUpRight size={17} aria-hidden="true" /></button><button type="button" className="text-link" onClick={onCancel}>Annuleren</button></div>
+      </form>
+    </section>
+  );
+}
+
 function Admin() {
   const [session, setSession] = useState(null);
   const [rows, setRows] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [tab, setTab] = useState("reservations");
+  const [editor, setEditor] = useState(undefined);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -848,6 +1002,12 @@ function Admin() {
         .then((data) => setRows(data.reservations))
         .catch((e) => setError(e.message));
   }, [session]);
+  useEffect(() => {
+    if (session?.admin && tab === "events")
+      api("/api/admin/events")
+        .then((data) => setEvents(data.events))
+        .catch((e) => setError(e.message));
+  }, [session?.admin, tab]);
   async function login(event) {
     event.preventDefault();
     setError("");
@@ -875,6 +1035,9 @@ function Admin() {
       });
       setSession(null);
       setRows([]);
+      setEvents([]);
+      setEditor(undefined);
+      setTab("reservations");
       setMessage("");
       setSession(await api("/api/session"));
     } catch (e) {
@@ -903,10 +1066,38 @@ function Admin() {
       setBusy(false);
     }
   }
+  async function saveEvent(data, id) {
+    await api(id ? `/api/admin/events/${id}` : "/api/admin/events", {
+      method: id ? "PUT" : "POST",
+      body: JSON.stringify({ ...data, csrf: session.csrf }),
+    });
+    setEditor(undefined);
+    setError("");
+    setMessage(id ? "Event bijgewerkt." : "Event opgeslagen.");
+    try {
+      setEvents((await api("/api/admin/events")).events);
+    } catch {
+      setError("Event opgeslagen, maar de lijst kon niet worden ververst. Herlaad de pagina.");
+    }
+  }
+  async function deleteEvent(event) {
+    if (!window.confirm(`"${event.title}" definitief verwijderen? Dit verwijdert ook de foto.`)) return;
+    setError("");
+    try {
+      await api(`/api/admin/events/${event.id}`, {
+        method: "DELETE", body: JSON.stringify({ csrf: session.csrf }),
+      });
+      setEvents((current) => current.filter((item) => item.id !== event.id));
+      setMessage("Event verwijderd.");
+      if (editor?.id === event.id) setEditor(undefined);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
   return (
     <section className="shell admin">
       <p className="eyebrow">Mellie’s · beheer</p>
-      <h1>Reserveringen.</h1>
+      <h1>Beheer.</h1>
       {error && (
         <p className="feedback" role="alert">
           {error}
@@ -936,15 +1127,17 @@ function Admin() {
       {session?.admin && (
         <>
           <div className="admin__tools">
-            <p>
-              Bevestig alleen als er plaats is. Neem zelf contact op wanneer de
-              e-mailmelding niet is verzonden.
-            </p>
+            <p>Beheer hier reserveringsaanvragen en de agenda van Mellie’s.</p>
             <button className="text-link" type="button" onClick={logout}>
               Uitloggen <ArrowRight size={18} aria-hidden="true" />
             </button>
           </div>
-          <div className="admin-list">
+          <div className="admin-tabs" role="tablist" aria-label="Beheeronderdelen">
+            <button type="button" role="tab" aria-selected={tab === "reservations"} onClick={() => { setTab("reservations"); setEditor(undefined); setMessage(""); }}>Reserveringen</button>
+            <button type="button" role="tab" aria-selected={tab === "events"} onClick={() => { setTab("events"); setMessage(""); }}>Events</button>
+          </div>
+          {tab === "reservations" ? <div role="tabpanel" className="admin-list">
+            <p className="admin-list__intro">Bevestig alleen als er plaats is. Neem zelf contact op als een e-mail niet is verzonden.</p>
             {rows.map((row) => (
               <article className="admin-card" key={row.id}>
                 <p className="eyebrow">
@@ -992,7 +1185,20 @@ function Admin() {
               </article>
             ))}
             {rows.length === 0 && <p>Er zijn nog geen aanvragen.</p>}
-          </div>
+          </div> : <div role="tabpanel" className="admin-events">
+            <div className="admin-events__top"><div><p className="eyebrow">Agenda van Mellie’s</p><h2>Jouw events.</h2><p>Een gepubliceerd event verschijnt meteen op de eventpagina, op volgorde van datum. Concepten zijn alleen hier zichtbaar.</p></div><button type="button" className="button" onClick={() => { setEditor(null); setMessage(""); }}>Nieuw event <ArrowUpRight size={18} aria-hidden="true" /></button></div>
+            {editor !== undefined && <EventEditor key={editor?.id || "new"} event={editor} onSave={saveEvent} onCancel={() => setEditor(undefined)} />}
+            <div className="admin-event-list">
+              {events.map((event) => (
+                <article className="admin-event" key={event.id}>
+                  <div className="admin-event__date"><strong>{eventDate(event.date, { day: "2-digit" })}</strong><span>{eventDate(event.date, { month: "short", year: "numeric" })}</span></div>
+                  <div><p className="eyebrow">{event.status === "published" ? "Gepubliceerd" : "Concept"} · {event.startTime} uur</p><h3>{event.title}</h3><p>{event.description}</p></div>
+                  <div className="admin-event__actions"><button type="button" className="text-link" onClick={() => { setEditor(event); setMessage(""); window.scrollTo({ top: 300, behavior: "smooth" }); }}>Bewerken <Pencil size={16} aria-hidden="true" /></button><button type="button" className="text-link" onClick={() => deleteEvent(event)}>Verwijderen <Trash2 size={16} aria-hidden="true" /></button></div>
+                </article>
+              ))}
+              {events.length === 0 && <p>Er zijn nog geen events. Voeg de eerste avond toe met de knop hierboven.</p>}
+            </div>
+          </div>}
         </>
       )}
     </section>
