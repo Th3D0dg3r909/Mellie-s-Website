@@ -208,11 +208,12 @@ app.get('/{*path}', (req, res) => {
 });
 
 const port = Number(process.env.PORT || 3000);
-try {
+async function start() {
   // An empty database is enough: create the reservation table on first start.
   await db.query(await readFile(new URL('../schema.sql', import.meta.url), 'utf8'));
   app.listen(port, '0.0.0.0', () => console.log(`Mellie's webapp listening on ${port}`));
-} catch (error) {
+}
+start().catch((error) => {
   console.error('Database initialization failed:', error.message);
   process.exit(1);
-}
+});
